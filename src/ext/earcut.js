@@ -1,1 +1,1 @@
-../../node_modules/earcut/src/earcut.js
+export { default } from '../../node_modules/earcut/src/earcut.js';

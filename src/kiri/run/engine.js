@@ -1,77 +1,31 @@
-/** Copyright Stewart Allen <sa@grid.space> -- All Rights Reserved */
+/**
+ * Headless slicing engine — no GUI/browser dependencies.
+ * Replaces the browser engine.js that imported from kiri/app/.
+ */
 
 import '../../add/array.js';
 import '../../add/class.js';
 import '../../add/three.js';
-import { api } from '../app/api.js';
-import { conf } from '../app/conf/defaults.js';
-import { client } from '../app/workers.js';
-import { load } from '../../load/file.js';
-import { newWidget } from '../app/widget.js';
+
+import '../core/codec.js';  // must load before widget.js to resolve circular dep
+import { newWidget } from '../core/widget.js';
+import { STL } from '../../load/stl.js';
+import { client, startWorker } from './client-headless.js';
 
 class Engine {
-    constructor({ workURL, poolURL } = {}) {
+    constructor() {
         this.widget = newWidget();
         this.settings = {
-            mode: "FDM",
+            mode:       'FDM',
             controller: {},
-            render: false,
-            filter: { FDM: "internal" },
-            device: conf.defaults.fdm.d, // device profile
-            process: conf.defaults.fdm.p, // slicing settings
-            widget: { [this.widget.id]: {} },
-            time: Date.now()
+            render:     false,
+            filter:     { FDM: 'internal' },
+            device:     {},
+            process:    {},
+            widget:     { [this.widget.id]: {} },
+            time:       Date.now(),
         };
-        this.listener = () => { };
-        try {
-            client.setWorkPath(workURL);
-            client.setPoolPath(poolURL);
-            client.restart();
-            client.pool.start();
-        } catch (error) {
-            console.log({ error });
-        }
-    }
-
-    load(url) {
-        return new Promise((accept, reject) => {
-            try {
-                new load.STL().load(url, vertices => {
-                    this.listener({ loaded: url, vertices });
-                    this.widget.loadVertices(vertices).center();
-                    this.setTopOffset(0);
-                    accept(this);
-                });
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    clear() {
-        api.platform.clear();
-    }
-
-    workspace() {
-        return api.settings.export({ engine: this.settings });
-    }
-
-    parse(data) {
-        return new Promise((accept, reject) => {
-            try {
-                let vertices = new load.STL().parse(data);
-                this.listener({ parsed: data, vertices });
-                this.widget.loadVertices(vertices).center();
-                accept(this);
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
-
-    setThreading(bool) {
-        console.log('setThreading() deprecated');
-        return this;
+        this.listener = () => {};
     }
 
     setListener(listener) {
@@ -84,20 +38,41 @@ class Engine {
         return this;
     }
 
+    workspace() {
+        return this.settings;
+    }
+
+    clear() {
+        this.widget = newWidget();
+        this.settings.widget = { [this.widget.id]: {} };
+        return this;
+    }
+
     /**
-     * Sets the mode of the engine. Valid modes are:
-     * @param {"FDM"|"CAM"|"LASER"|"SLA"} mode - the mode to set
-     * @returns {Engine} this
+     * Parse raw binary buffer (STL, 3MF, etc.) into the engine widget.
+     * @param {ArrayBuffer} data
      */
+    parse(data) {
+        return new Promise((resolve, reject) => {
+            try {
+                const vertices = new STL().parse(data);
+                this.listener({ parsed: data, vertices });
+                this.widget.loadVertices(vertices).center();
+                this.setTopOffset(0);
+                resolve(this);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
     setMode(mode) {
-        let lmode = mode.toLowerCase();
+        const lmode = mode.toLowerCase();
         Object.assign(this.settings, {
-            mode: mode,
+            mode,
             controller: {},
-            render: false,
-            filter: { [mode]: "internal" },
-            device: conf.defaults[lmode].d,
-            process: conf.defaults[lmode].p,
+            render:     false,
+            filter:     { [mode]: 'internal' },
         });
         return this;
     }
@@ -113,13 +88,7 @@ class Engine {
     }
 
     setController(controller) {
-        let ctrl = this.settings.controller;
-        Object.assign(ctrl, controller);
-        if (ctrl.threaded) {
-            client.pool.start();
-        } else {
-            client.pool.stop();
-        }
+        Object.assign(this.settings.controller, controller);
         return this;
     }
 
@@ -129,23 +98,19 @@ class Engine {
     }
 
     setStock(stock) {
-        let { settings } = this;
-        let { process } = settings;
+        const { settings } = this;
+        const { process } = settings;
         settings.stock = stock;
         process.camStockX = stock.x;
         process.camStockY = stock.y;
         process.camStockZ = stock.z;
-        settings.stock.center = {
-            x: stock.x / 2,
-            y: stock.y / 2,
-            z: stock.z / 2
-        };
+        settings.stock.center = { x: stock.x / 2, y: stock.y / 2, z: stock.z / 2 };
         return this;
     }
 
     setTopOffset(offset = 0) {
         this.topOffset = offset;
-        let wbb = this.widget.getBoundingBox();
+        const wbb = this.widget.getBoundingBox();
         this.widget.setTopZ(wbb.max.z - offset);
         return this;
     }
@@ -177,18 +142,16 @@ class Engine {
     }
 
     slice() {
-        return new Promise((accept, reject) => {
+        return new Promise((resolve, reject) => {
             client.clear();
             client.sync([this.widget]);
             client.rotate(this.settings);
             client.slicePre(this.settings, () => {});
             client.slice(this.settings, this.widget, msg => {
                 this.listener({ slice: msg });
-                if (msg.error) {
-                    reject(msg.error);
-                }
+                if (msg.error) reject(msg.error);
                 if (msg.done) {
-                    accept(this);
+                    resolve(this);
                     client.slicePost(this.settings, () => {});
                 }
             });
@@ -196,34 +159,44 @@ class Engine {
     }
 
     prepare() {
-        return new Promise((accept, reject) => {
-            client.prepare(this.settings, update => {
-                this.listener({ prepare: { update } });
-            }, done => {
-                this.listener({ prepare: { done: true } });
-                accept(this);
-            });
+        return new Promise((resolve, reject) => {
+            client.prepare(
+                this.settings,
+                (progress, message) => {
+                    this.listener({ prepare: { progress, message } });
+                },
+                (output, maxSpeed, minSpeed) => {
+                    this.listener({ prepare: { done: true } });
+                    resolve(this);
+                },
+            );
         });
     }
 
     export() {
-        return new Promise((accept, reject) => {
-            let output = [];
-            client.export(this.settings, segment => {
-                if (typeof segment === 'string') {
-                    this.listener({ export: { segment } });
-                    output.push(segment);
-                }
-            }, done => {
-                this.listener({ export: { done } });
-                accept(output.join('\r\n'));
-            });
+        return new Promise((resolve, reject) => {
+            const output = [];
+            client.export(
+                this.settings,
+                segment => {
+                    if (typeof segment === 'string') {
+                        this.listener({ export: { segment } });
+                        output.push(segment);
+                    }
+                },
+                (done, error) => {
+                    if (error) return reject(error);
+                    this.listener({ export: { done } });
+                    resolve(output.join('\r\n'));
+                },
+            );
         });
     }
 }
 
-export function newEngine() {
-    return new Engine(...arguments);
+export async function newEngine() {
+    await startWorker();
+    return new Engine();
 }
 
 export { Engine };

@@ -12,6 +12,7 @@
     "sliceFillType": "gyroid",
     "sliceAdaptive": false,
     "sliceMinHeight": 0,
+    "sliceSupportType": "disabled",
     "sliceSupportDensity": 0.25,
     "sliceSupportOffset": 0.4,
     "sliceSupportGap": 1,

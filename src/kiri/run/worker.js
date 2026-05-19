@@ -188,7 +188,7 @@ const minwork = {
 
     subtract({ a, b, outA, outB, z, area, wasm }) {
         return new Promise((resolve, reject) => {
-            if (concurrent < 2 || a.length + b.length < concurrent * 2 || POLY.points([...a,...b]) < concurrent * 50) {
+            if (!minions.length || concurrent < 2 || a.length + b.length < concurrent * 2 || POLY.points([...a,...b]) < concurrent * 50) {
                 POLY.subtract(a, b, outA, outB, z, area, { wasm });
                 resolve();
                 return;
@@ -212,7 +212,7 @@ const minwork = {
 
     union(polys, minarea) {
         return new Promise((resolve, reject) => {
-            if (concurrent < 2 || polys.length < concurrent * 2 || POLY.points(polys) < concurrent * 50) {
+            if (!minions.length || concurrent < 2 || polys.length < concurrent * 2 || POLY.points(polys) < concurrent * 50) {
                 resolve(POLY.union(polys, minarea, true));
                 return;
             }
@@ -240,7 +240,7 @@ const minwork = {
 
     fill(polys, angle, spacing, output, minLen, maxLen) {
         return new Promise((resolve, reject) => {
-            if (concurrent < 2) {
+            if (!minions.length || concurrent < 2) {
                 resolve(POLY.fillArea(polys, angle, spacing, [], minLen, maxLen));
                 return;
             }
@@ -265,7 +265,7 @@ const minwork = {
 
     clip(slice, polys, lines) {
         return new Promise((resolve, reject) => {
-            if (concurrent < 2) {
+            if (!minions.length || concurrent < 2) {
                 reject("concurrent clip unavailable");
             }
             const state = { zeros: [] };
@@ -291,7 +291,7 @@ const minwork = {
 
     sliceZ(z, points, options) {
         return new Promise((resolve, reject) => {
-            if (concurrent < 2) {
+            if (!minions.length || concurrent < 2) {
                 reject("concurrent slice unavaiable");
             }
             let { each } = options;

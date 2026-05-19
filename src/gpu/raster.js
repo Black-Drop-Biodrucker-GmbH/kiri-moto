@@ -1,1 +1,6 @@
-../../node_modules/@gridspace/raster-path/build/raster-path.js
+/** headless stub — GPU rasterization is browser/SLA only */
+
+export class RasterPath {
+    constructor() {}
+    async init() {}
+}

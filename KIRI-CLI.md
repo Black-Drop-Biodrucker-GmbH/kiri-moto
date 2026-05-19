@@ -18,7 +18,8 @@ A headless command-line slicer built on the Kiri:Moto engine. Reads an STL file,
 10. [Model Transforms](#model-transforms)
 11. [GCode Macros](#gcode-macros)
 12. [Scripting and Automation](#scripting-and-automation)
-13. [Troubleshooting](#troubleshooting)
+13. [Building Standalone Binaries](#building-standalone-binaries)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -754,6 +755,207 @@ The `slice` script in `package.json` is a shorthand when you're inside the repo 
 ```bash
 npm run slice -- model.stl --output=out.gcode
 ```
+
+---
+
+## Building Standalone Binaries
+
+The CLI can be compiled into a self-contained executable using **Node.js SEA** (Single Executable Application — built into Node.js 22). The result is a single file that runs with no Node.js installation on the target machine.
+
+### How it works
+
+```text
+src/kiri/run/cli.js
+        │
+        ▼  esbuild (bundle-cli.mjs)
+dist/bundle.cjs          ← entire source tree in one CJS file (~3.7 MB)
+        │
+        ▼  node --experimental-sea-config sea-config.json
+dist/sea-prep.blob       ← compressed blob (bundle + embedded JSON assets)
+        │
+        ▼  postject injects blob into a copy of the local node binary
+dist/kiri-win.exe        ← standalone Windows binary
+dist/kiri-linux-x86_64   ← standalone Linux binary (built on Linux x86)
+dist/kiri-linux-aarch64  ← standalone Linux binary (built on Linux ARM/Pi)
+```
+
+The JSON config files (`src/cli/*.json`) are embedded inside the blob as SEA assets — no external files needed.
+
+> **Cross-compilation is not supported.** Node.js SEA copies and patches the *local* `node` binary, so you must build on each target platform. To produce a Linux binary, run the build on Linux (or a Pi).
+
+---
+
+### Prerequisites
+
+All builds require Node.js ≥ 22 and the dev dependencies:
+
+```bash
+npm install
+```
+
+---
+
+### Build for Windows
+
+Run from the repo root on a Windows machine:
+
+```powershell
+npm run build:win
+```
+
+This runs [bin/build-sea-win.ps1](bin/build-sea-win.ps1), which:
+
+1. Bundles the source with esbuild → `dist/bundle.cjs`
+2. Generates the SEA blob → `dist/sea-prep.blob`
+3. Copies the local `node.exe` → `dist/kiri-win.exe`
+4. Injects the blob into the copy with `postject`
+5. Runs `dist/kiri-win.exe --help` to verify
+
+Output: `dist/kiri-win.exe` (~100 MB, fully self-contained)
+
+---
+
+### Build for Linux x86_64
+
+Run from the repo root on a Linux x86_64 machine:
+
+```bash
+npm run build:linux
+```
+
+This runs [bin/build-sea-linux.sh](bin/build-sea-linux.sh), which does the same steps as the Windows script. The output filename includes the architecture from `uname -m`:
+
+Output: `dist/kiri-linux-x86_64`
+
+---
+
+### Build for Linux ARM64 (Raspberry Pi 4/5)
+
+SSH into the Pi, clone the repo, install Node.js ≥ 22, then:
+
+```bash
+npm install
+npm run build:linux
+```
+
+Output: `dist/kiri-linux-aarch64`
+
+The same script is used — it detects the architecture automatically.
+
+#### Installing Node.js 22 on a Pi (Raspberry Pi OS)
+
+```bash
+# using NodeSource
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+node --version   # should print v22.x.x
+```
+
+---
+
+### Using the binary
+
+The standalone binary behaves identically to `kiri` from an npm installation:
+
+```bash
+# Windows
+dist\kiri-win.exe model.stl --output=model.gcode
+
+# Linux
+./dist/kiri-linux-x86_64 model.stl --output=model.gcode
+
+# use custom profiles (paths resolve from current directory)
+./dist/kiri-linux-x86_64 model.stl --device=my-printer.json --process=fine.json --output=out.gcode
+```
+
+The built-in default profiles (Ender 3, default FDM process, etc.) are embedded inside the binary — you do not need to ship any JSON files alongside it.
+
+---
+
+### Distributing the binary
+
+Copy only the single binary file to the target machine. No Node.js, no `node_modules`, no JSON configs needed.
+
+```text
+Java app/
+├── bin/
+│   ├── kiri-win.exe          ← Windows
+│   ├── kiri-linux-x86_64     ← Linux x86
+│   └── kiri-linux-aarch64    ← Linux ARM (Pi)
+└── ...
+```
+
+Detect the platform at runtime in your Java application and invoke the right binary:
+
+```java
+String os   = System.getProperty("os.name").toLowerCase();
+String arch = System.getProperty("os.arch").toLowerCase();
+
+String binary;
+if (os.contains("win")) {
+    binary = "bin/kiri-win.exe";
+} else if (arch.contains("aarch64") || arch.contains("arm64")) {
+    binary = "bin/kiri-linux-aarch64";
+} else {
+    binary = "bin/kiri-linux-x86_64";
+}
+
+ProcessBuilder pb = new ProcessBuilder(
+    binary,
+    "model.stl",
+    "--output=model.gcode",
+    "--device=my-printer.json"
+);
+pb.redirectErrorStream(true);
+Process proc = pb.start();
+int exit = proc.waitFor();
+```
+
+On Linux, make the binary executable before calling it:
+
+```bash
+chmod +x bin/kiri-linux-x86_64
+chmod +x bin/kiri-linux-aarch64
+```
+
+Or do it from Java at first launch:
+
+```java
+new ProcessBuilder("chmod", "+x", binary).start().waitFor();
+```
+
+---
+
+### What is embedded vs external
+
+| Item | Embedded in binary | Must be on disk |
+| --- | --- | --- |
+| All JS source code | yes | no |
+| Built-in FDM device (Ender 3) | yes | no |
+| Built-in FDM process | yes | no |
+| Built-in controller settings | yes | no |
+| Built-in CAM tools | yes | no |
+| Custom `--device=` profiles | no | yes (user-provided) |
+| Custom `--process=` profiles | no | yes (user-provided) |
+| Input STL file | no | yes |
+| Output GCode file | no | yes |
+
+---
+
+### Rebuilding after source changes
+
+Any time you modify source files or profiles, rebuild:
+
+```powershell
+# Windows
+npm run build:win
+
+# Linux
+npm run build:linux
+```
+
+The bundle step (`npm run bundle`) alone regenerates `dist/bundle.cjs` without injecting — useful to quickly check the bundle builds without the full binary packaging step.
 
 ---
 

@@ -39,11 +39,22 @@
         "jszip": "^3.7.1",
         "three": "^0.182.0"
     },
+    "devDependencies": {
+        "@yao-pkg/pkg": "^5.12.0",
+        "esbuild": "^0.25.5",
+        "postject": "^1.0.0-alpha.6"
+    },
+    "pkg": {
+        "assets": ["src/cli/*.json"]
+    },
     "bin": {
         "kiri": "src/kiri/run/cli.js"
     },
     "scripts": {
-        "slice": "node src/kiri/run/cli.js"
+        "slice":          "node src/kiri/run/cli.js",
+        "bundle":         "node bin/bundle-cli.mjs",
+        "build:win":         "powershell -ExecutionPolicy Bypass -File bin/build-sea-win.ps1",
+        "build:linux":       "bash bin/build-sea-linux.sh"
     },
     "sideEffects": true,
     "type": "module"

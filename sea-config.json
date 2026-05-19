@@ -1,0 +1,13 @@
+{
+    "main": "dist/bundle.cjs",
+    "output": "dist/sea-prep.blob",
+    "disableExperimentalSEAWarning": true,
+    "assets": {
+        "src/cli/kiri-fdm-device.json":  "src/cli/kiri-fdm-device.json",
+        "src/cli/kiri-fdm-process.json": "src/cli/kiri-fdm-process.json",
+        "src/cli/kiri-controller.json":  "src/cli/kiri-controller.json",
+        "src/cli/kiri-cam-tools.json":   "src/cli/kiri-cam-tools.json",
+        "src/cli/kiri-cam-device.json":  "src/cli/kiri-cam-device.json",
+        "src/cli/kiri-cam-process.json": "src/cli/kiri-cam-process.json"
+    }
+}

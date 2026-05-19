@@ -26,9 +26,14 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../../..');
 
+// user-provided paths resolve from cwd; built-in defaults use ROOT
 function resolve(p) {
     if (!p) return undefined;
-    return path.isAbsolute(p) ? p : path.join(ROOT, p);
+    return path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+}
+
+function resolveBuiltin(p) {
+    return path.join(ROOT, p);
 }
 
 function readJSON(file) {
@@ -40,10 +45,10 @@ function readJSON(file) {
 const args = process.argv.slice(2);
 const opts = {
     output:     '-',
-    device:     'src/cli/kiri-fdm-device.json',
-    process:    'src/cli/kiri-fdm-process.json',
-    controller: 'src/cli/kiri-controller.json',
-    tools:      'src/cli/kiri-cam-tools.json',
+    device:     resolveBuiltin('src/cli/kiri-fdm-device.json'),
+    process:    resolveBuiltin('src/cli/kiri-fdm-process.json'),
+    controller: resolveBuiltin('src/cli/kiri-controller.json'),
+    tools:      resolveBuiltin('src/cli/kiri-cam-tools.json'),
     model:      null,
     verbose:    false,
     help:       false,
